@@ -1,10 +1,9 @@
-name: release
+name: Release
 
 on:
-  workflow_run:
-    workflows: [ "backwards_compatibility" ]
-    types:
-      - completed
+  push:
+    tags:
+      - 'v*'
 
 permissions:
   contents: write
@@ -12,82 +11,34 @@ permissions:
 
 jobs:
   release:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: read
-
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Get latest tag
-        id: get-latest-tag
-        run: |
-          git fetch --tags
-
-          latest_tag=$(git tag --sort=-v:refname | grep '^v' | head -n 1)
-
-          if [ -z "$latest_tag" ]; then
-            echo "No existing version tag found. Defaulting to v0.0.0"
-            latest_tag="v0.0.0"
-          fi
-
-          echo "LATEST_TAG=$latest_tag" >> $GITHUB_ENV
-
-      - name: Calculate new version
-        id: version
-        run: |
-          latest_tag=${{ env.LATEST_TAG }}
-
-          base_version="${latest_tag#v}"
-          major=$(echo "$base_version" | cut -d '.' -f1)
-          minor=$(echo "$base_version" | cut -d '.' -f2)
-          patch=$(echo "$base_version" | cut -d '.' -f3)
-
-          enhancement_count=$(gh pr list \
-            --base main \
-            --state merged \
-            --json labels \
-            --search "merged:>=$(git log -1 --format=%aI $latest_tag)" | \
-            jq '[.[] | select(.labels[].name == "enhancement")] | length'
-          )
-
-          if [ "$enhancement_count" -gt 0 ]; then
-            minor=$((minor + 1))
-            patch=0
-          else
-            patch=$((patch + 1))
-          fi
-
-          new_version="v$major.$minor.$patch"
-          echo "NEW_VERSION=$new_version" >> $GITHUB_ENV
+      - name: Generate Release Notes
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Generate release notes
-        id: release-notes
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
         run: |
-          release_notes=$(gh pr list \
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo '')
+          SINCE_DATE=$(git log -1 --format=%aI $PREV_TAG)
+
+          git fetch origin main:refs/remotes/origin/main
+
+          gh pr list \
             --base main \
             --state merged \
             --json title,number,author \
-            --search "merged:>=$(git log -1 --format=%aI ${{ env.LATEST_TAG }})" | \
-            jq -r '.[] | "- \(.title) by @\(.author.login) in #\(.number)"' | sort)
+            --search "merged:>=$SINCE_DATE" | \
+          jq -r '.[] | "- \(.title) by @\(.author.login) in #\(.number)"' > pr_notes.txt
 
-          echo "$release_notes" >> release_notes.md
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          git log --pretty=format:'%H' origin/main "$PREV_TAG"..HEAD --no-merges | \
+          xargs -I {} sh -c 'git show -s --format="- %s by %an <%ae> in https://github.com/$REPO/commit/{}" {}' | \
+          grep -v "Merge pull request" > commit_notes.txt
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
+          cat pr_notes.txt commit_notes.txt | sort > RELEASE_NOTES.md
+      - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.NEW_VERSION }}
-          name: Release ${{ env.NEW_VERSION }}
-          body_path: release_notes.md
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          body_path: RELEASE_NOTES.md
