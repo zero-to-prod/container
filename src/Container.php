@@ -27,7 +27,6 @@ class Container implements ContainerContract
      * Get the globally available instance of the container.
      *
      * @return static
-     * A PSR Compliant Container.
      * @link https://github.com/zero-to-prod/container
      */
     public static function getInstance()
@@ -42,7 +41,6 @@ class Container implements ContainerContract
      * @param  mixed   $instance
      *
      * @return mixed
-     * A PSR Compliant Container.
      * @link https://github.com/zero-to-prod/container
      */
     public function instance(string $abstract, $instance)
@@ -58,7 +56,6 @@ class Container implements ContainerContract
      * @param  string  $id
      *
      * @return mixed
-     * A PSR Compliant Container.
      * @link https://github.com/zero-to-prod/container
      */
     public function get($id)
@@ -74,7 +71,6 @@ class Container implements ContainerContract
      * @inheritDoc
      *
      * @param  string  $id
-     * A PSR Compliant Container.
      *
      * @link https://github.com/zero-to-prod/container
      */
